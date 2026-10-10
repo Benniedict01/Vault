@@ -1,0 +1,15 @@
+name: Crypto Vault monitor
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Monitor all vaults
+        env:
+          APP_URL: ${{ secrets.VAULT_APP_URL }}
+          CRON_SECRET: ${{ secrets.VAULT_CRON_SECRET }}
+        run: |
+          curl -fsS --max-time 120 --retry 3 --retry-delay 20 -X POST "$APP_URL/api/monitor" -H "Authorization: Bearer $CRON_SECRET"

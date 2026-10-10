@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: crypto-vault
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate && npx prisma db push && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: CRON_SECRET
+        sync: false
