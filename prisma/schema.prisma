@@ -7,24 +7,94 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------------------------
+// Authentication is owned by Better Auth (see lib/auth.js). The four models it
+// requires are User, Session, Account and Verification. Their field names are
+// fixed by Better Auth; do not rename them.
+//
+// User carries the app's own fields alongside the auth fields. Better Auth is
+// told about emailVerifiedAt through `user.additionalFields`, so it never
+// writes it directly; `emailVerification.afterEmailVerification` does.
+// ---------------------------------------------------------------------------
+
 model User {
-  id                       String    @id @default(cuid())
-  email                    String    @unique
-  passwordHash             String
+  id            String    @id @default(cuid())
+  // --- Better Auth core fields ---
+  name          String    @default("")
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+
+  // --- App fields ---
   emailVerifiedAt          DateTime?
-  verificationTokenHash    String?
-  verificationTokenExpiresAt DateTime?
-  resetTokenHash           String?
-  resetTokenExpiresAt      DateTime?
   tokenMonitoringEnabled   Boolean   @default(true)
   notifyDeposits           Boolean   @default(true)
   notifyWithdrawals        Boolean   @default(false)
   notifyTokenDeposits      Boolean   @default(true)
   minimumNotificationUsd   String    @default("0")
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
-  wallets                  Wallet[]
-  notifications            Notification[]
+
+  // --- Legacy auth columns ---
+  // Kept nullable so `prisma db push` never drops data. scripts/migrate-auth.mjs
+  // copies passwordHash into Account.password and then nulls it. The token
+  // columns are no longer read: Better Auth stores its own hashed tokens in the
+  // Verification table. All of these can be removed in a later, deliberate
+  // migration once the new flow has been verified in production.
+  passwordHash                String?
+  verificationTokenHash       String?
+  verificationTokenExpiresAt  DateTime?
+  resetTokenHash              String?
+  resetTokenExpiresAt         DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  wallets        Wallet[]
+  notifications  Notification[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  // bcrypt hash for the "credential" provider. Migrated from User.passwordHash.
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  // With `verification.storeIdentifier: 'hashed'`, this is a SHA-256 hash of
+  // the token. The raw token only ever exists in the email link.
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@index([identifier])
 }
 
 model Wallet {

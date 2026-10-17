@@ -4,6 +4,7 @@ import { getSessionUserId } from '@/lib/auth';
 
 const FIELDS = {
   email: true,
+  emailVerified: true,
   emailVerifiedAt: true,
   tokenMonitoringEnabled: true,
   notifyDeposits: true,

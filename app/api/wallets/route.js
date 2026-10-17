@@ -33,8 +33,8 @@ export async function POST(req) {
   try {
     const existingCount = await db.wallet.count({ where: { userId } });
     if (existingCount >= 1) {
-      const user = await db.user.findUnique({ where: { id: userId }, select: { emailVerifiedAt: true } });
-      if (!user?.emailVerifiedAt) {
+      const user = await db.user.findUnique({ where: { id: userId }, select: { emailVerified: true } });
+      if (!user?.emailVerified) {
         return NextResponse.json({
           error: 'Verify your email before adding a second wallet. Open the verification link sent to your email, or request a new one from Resend Verification.',
           code: 'EMAIL_VERIFICATION_REQUIRED',

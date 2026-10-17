@@ -37,24 +37,37 @@ polls balances on a schedule and emails users when funds arrive or leave.
 |---|---|---|
 | Frontend | Next.js 15 App Router, plain CSS, no UI library | `app/` |
 | Landing page | Static-rendered marketing page, inline SVG icons | `app/page.js` |
-| Auth | Email + password, signed session cookie via `jose`, `bcryptjs` hashes | `lib/auth.js`, `app/api/auth/*` |
-| Tokens | Verification and reset tokens, stored as hashes only | `lib/tokens-auth.js` |
+| Auth | Email + password via Better Auth; sessions, verification and reset owned by the library | `lib/auth.js`, `lib/auth-client.js`, `app/api/auth/[...all]/route.js` |
+| Tokens | Better Auth verification/reset tokens, single use, stored as SHA-256 hashes only | `Verification` table (`storeIdentifier: 'hashed'`) |
 | Data | PostgreSQL via Prisma | `prisma/schema.prisma` |
 | Chain input validation | Network registry and address/seed rejection | `lib/validation.js` |
 | Balance + token monitoring | Per-network adapters, alert dispatch | `lib/monitor.js` |
+| Auth migration | One-off, idempotent move of existing passwords/verification state | `scripts/migrate-auth.mjs` |
 | Token/indexer adapters | Blockscout and Solana token reads | `lib/tokens.js` |
 | Alert decisions + email text | Pure, unit-testable rules (no DB or network imports) | `lib/alerts.js` |
-| Email | Resend (HTTPS) primary, SMTP fallback | `lib/mail.js` |
+| Email | Plunk HTTPS API only; no SMTP path | `lib/mail.js` |
 | Scheduler | GitHub Actions cron calling `POST /api/monitor` | `.github/workflows/monitor.yml` |
 | Hosting | Render web service (`render.yaml`) | repo root |
 | Installable app | Web manifest, service worker, install banner | `public/`, `app/pwa.js` |
 | Health | `GET /api/health` | `app/api/health/route.js` |
 | This brief | Standing engineering document | `ENGINEERING.md` |
 
-### Data model (Prisma, 3 models)
+### Data model (Prisma, 6 models)
 
-- `User`: email (unique), password hash, email verification state, reset-token
-  hash and expiry, notification settings.
+Four models belong to Better Auth and must keep their field names:
+
+- `User`: Better Auth core fields (`name`, `email`, `emailVerified`, `image`)
+  plus the app's notification settings and `emailVerifiedAt`. The legacy
+  `passwordHash` and token columns are kept only so `prisma db push` never drops
+  data; nothing reads them after `scripts/migrate-auth.mjs` has run.
+- `Session`: active sessions (token, expiry, IP, user agent).
+- `Account`: one row per sign-in method. The email/password hash lives in
+  `Account.password` for `providerId = "credential"`.
+- `Verification`: verification and reset tokens, stored hashed.
+
+App models:
+
+- `User` also owns wallets and notifications (see below).
 - `Wallet`: owned by a user; `(userId, chain, address)` is unique; stores last
   known native amount and last checked time. Withdrawal confirmation state
   (`lastConfirmedAmount`, `pendingDecreaseAmount`, `pendingDecreaseAt`) lives
@@ -63,6 +76,18 @@ polls balances on a schedule and emails users when funds arrive or leave.
   amount, USD value, chain, and optional transaction hash. Also powers the
   "recent alerts" list. Delivery state (`sentAt`, `sendAttempts`, `sendError`)
   lives here — see §5.1.
+
+Rules for the auth models:
+
+- Do not hand-write routes under `app/api/auth/*`; `[...all]/route.js` owns that
+  segment. New auth behaviour is a Better Auth option in `lib/auth.js`.
+- Do not rename Better Auth's fields. Add app fields through
+  `user.additionalFields`, not by editing the core ones.
+- `User.emailVerified` is the canonical verification flag. `emailVerifiedAt` is
+  display-only and is written by `emailVerification.afterEmailVerification`.
+- Passwords stay bcrypt (`emailAndPassword.password` in `lib/auth.js`).
+  Changing the hash algorithm requires a rehash-on-login migration, not a
+  config change: every stored hash would otherwise stop working.
 
 ### Request flow for an alert
 
@@ -96,16 +121,17 @@ before the alert so partial progress survives a crash or timeout.
 | `AUTH_SECRET` | yes | Signs session tokens | 32+ random characters. Rotating it logs everyone out. |
 | `APP_URL` | yes | Public base URL, no trailing slash | Used to build verification and reset links. |
 | `CRON_SECRET` | yes | Authorises `/api/monitor` | Must equal the GitHub secret `VAULT_CRON_SECRET`. |
-| `RESEND_API_KEY` | recommended | Enables Resend email | If set, Resend is used instead of SMTP. |
-| `EMAIL_FROM` | with Resend | Sender, e.g. `Crypto Vault <alerts@domain.com>` | Without a verified domain: `onboarding@resend.dev`, delivers only to the Resend account owner. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | fallback | Classic SMTP | Only used when `RESEND_API_KEY` is empty. Blocked on Render free tier. Port must be 465 or 587. |
+| `PLUNK_SECRET_KEY` | required for email | Plunk API key | Plunk is the only sender. Without it, sends fail fast with a logged "not configured" error. |
+| `PLUNK_FROM` | optional | Sender, e.g. `Crypto Vault <alerts@domain.com>` | Must be verified in Plunk. Empty uses the project's default sender. |
 
 GitHub Actions secrets: `VAULT_APP_URL` (the deployed URL), `VAULT_CRON_SECRET`
 (same value as `CRON_SECRET`).
 
-Removed in the current design and must not be reintroduced without a reason:
-`MIN_NOTIFY_AMOUNT`, `CHECK_INTERVAL_SECONDS`, `ACCESS_TOKEN`, `VAULT_ADDRESSES`.
-These belonged to the earlier standalone Node server.
+Removed and must not be reintroduced without a reason:
+`MIN_NOTIFY_AMOUNT`, `CHECK_INTERVAL_SECONDS`, `ACCESS_TOKEN`, `VAULT_ADDRESSES`
+(from the earlier standalone Node server), and `RESEND_API_KEY`, `EMAIL_FROM`,
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (the old
+email transport; Plunk replaced it and SMTP is gone deliberately).
 
 ---
 
@@ -143,11 +169,11 @@ the related code, and do not remove existing fallbacks.
 
 | Failure | Detection | Failsafe |
 |---|---|---|
-| Resend returns an error (for example, unverified domain or invalid key) | `[email] Resend send failed` in logs with status and reason | The send fails for that message. Verification and reset flows return a generic "could not send" message. The alert row is still stored. |
-| Resend unreachable or slow | 15-second abort timeout, logged as `timed out` | Same as above. The alert row keeps `sentAt = null`, so `retryPendingAlerts()` tries again on the next scheduled run. |
-| `RESEND_API_KEY` missing | Code falls back to SMTP | If SMTP is also unavailable on this host (Render free), the send fails with a "not configured" error. Set the key. |
-| Emails land in spam | User reports, or Resend dashboard shows bounces or complaints | Add the "check your spam folder" line on verification and login screens. Verify a sending domain and add SPF, DKIM, and DMARC records. |
-| No verified domain | Resend rejects recipients other than the account owner | Buy a domain (about $10/year) and verify it in Resend. Until then, testing only. |
+| Plunk returns an error (for example, unverified sender or invalid key) | `[email] Plunk send failed` in logs with status and reason | The send fails for that message. Verification and reset flows return a generic "could not send" message. The alert row is still stored. |
+| Plunk unreachable or slow | 15-second abort timeout, logged as `timed out` | Same as above. The alert row keeps `sentAt = null`, so `retryPendingAlerts()` tries again on the next scheduled run. |
+| `PLUNK_SECRET_KEY` missing | `sendMail` throws `Email delivery is not configured` before any network call | Verification/reset return a generic message; monitoring continues and stores the alert row. Set the key. There is no SMTP fallback by design. |
+| Emails land in spam | User reports, or the Plunk dashboard shows bounces or complaints | The "check your spam folder" line is on the verification, sign-up and sign-in screens. Verify a sending domain and add SPF, DKIM, and DMARC records. |
+| No verified sender or domain | Plunk rejects the send | Verify a sender address (enough for testing) or a whole domain (needed for real users) in Plunk, and set `PLUNK_FROM`. |
 
 **Implemented failsafe (alert retry).** Every alert writes a `Notification` row
 before the email is attempted, and the row records `sentAt`, `sendAttempts` and
@@ -222,9 +248,9 @@ Schema changes are additive on purpose (new nullable columns with defaults), so
 
 | Failure | Failsafe |
 |---|---|
-| `AUTH_SECRET` leaked | Rotate it in the environment and redeploy. All sessions are invalidated. Tell users to sign in again. |
+| `AUTH_SECRET` leaked | Rotate it in the environment and redeploy. Better Auth signs session cookies and verification tokens with it, so every session and every outstanding verification/reset link stops working. Tell users to sign in again. |
 | `CRON_SECRET` leaked | Rotate it in Render and in GitHub secrets. Anyone with the old value can trigger extra monitor runs but cannot read data. |
-| `RESEND_API_KEY` leaked | Revoke it in Resend and create a new one. |
+| `PLUNK_SECRET_KEY` leaked | Revoke it in Plunk and create a new one. |
 | Any credential accidentally committed | Treat it as compromised. Rotate, then remove it from history (`git filter-repo`), because deleting the file alone leaves it in past commits. |
 | User forgets password | Forgot-password flow issues a time-limited reset link. Never reveal whether an email has an account. |
 
@@ -279,6 +305,8 @@ implementation.
   with an optional threshold.
 - **Audit log:** an append-only table of security-relevant events (login,
   password reset, wallet added or removed).
+- Done: sign-in, sign-up and password-reset rate limiting (Better Auth, per IP).
+- Done: password reset revokes other sessions (`revokeSessionsOnPasswordReset`).
 - **Two-factor authentication** (TOTP) for accounts once there are paying users.
 - Done: withdrawal detection hardening (two consecutive reads, §5.3).
 - Done: price data cached for 60 seconds, and a failed price lookup no longer
@@ -299,12 +327,12 @@ implementation.
   model is stable.
 
 ### 6.5 Email deliverability roadmap
-1. Now: Resend with `onboarding@resend.dev`, testing only.
-2. When inviting outside users: buy a domain, verify it in Resend, set
-   `EMAIL_FROM`, add SPF, DKIM, and DMARC records.
-3. If Resend becomes a constraint: SMTP2GO HTTPS API as an alternate provider
-   behind the same `sendMail()` interface. Requires a code change in
-   `lib/mail.js`.
+1. Now: Plunk with a verified sender address, testing only.
+2. When inviting outside users: buy a domain, verify it in Plunk, set
+   `PLUNK_FROM`, add SPF, DKIM, and DMARC records.
+3. If Plunk becomes a constraint: another HTTPS email API behind the same
+   `sendMail()` interface. Only `lib/mail.js` changes. Never reintroduce SMTP:
+   it is blocked on Render's free plan and was the main cause of failed sends.
 4. Self-hosted Postfix: not recommended on free infrastructure. Requires a VPS
    that permits port 25, a domain, reverse DNS, and ongoing reputation
    management.
@@ -339,6 +367,52 @@ When you finish a change, report:
 ---
 
 ## 9. Change log
+
+### 2026-10-17 (later) — verification/reset replaced with Better Auth; Plunk replaces Resend and SMTP
+
+Decision: stop maintaining hand-written auth routes. Better Auth owns sign-up,
+sign-in, sessions, email verification and password reset, and Plunk is the only
+email transport. Gmail/SMTP is removed outright (see §3: do not reintroduce it).
+
+What moved where:
+
+- Deleted: `app/api/auth/{login,register,forgot,reset,verify,resend-verification,logout}`
+  and `lib/tokens-auth.js` (randomToken/hashToken are no longer needed).
+- Added: `lib/auth.js` (Better Auth config + `getSessionUserId`),
+  `lib/auth-client.js` (browser client), `app/api/auth/[...all]/route.js`
+  (catch-all handler).
+- Schema: added `Session`, `Account`, `Verification`; `User` gained Better Auth's
+  `name`, `emailVerified` and `image`; `User.passwordHash` and the four token
+  columns became nullable and are no longer read.
+- `lib/mail.js` rewritten for the Plunk API (15 s timeout, `subscribed: false`,
+  text-to-HTML escaping). `nodemailer`, `jose` and their env vars are gone.
+- `scripts/migrate-auth.mjs` (new) copies bcrypt hashes into `Account.password`,
+  backfills `name`/`emailVerified`, and nulls the legacy columns. It runs in the
+  Render build after `prisma db push` and is idempotent.
+
+Behaviour changes worth knowing:
+
+- Passwords stay bcrypt through a custom `emailAndPassword.password` hash/verify,
+  so existing accounts keep working with no rehash and no forced reset.
+- `User.emailVerified` is now the source of truth for "may receive alert email"
+  and "may add a second wallet". `emailVerifiedAt` is display-only.
+- Password reset now revokes every other session (closes an open recommendation).
+- Sign-in, sign-up and reset requests are rate limited per IP by Better Auth;
+  the in-process store is per instance, which is acceptable on a single Render
+  instance but must move to shared storage if the app scales out.
+- A duplicate sign-up stays generic, and the real owner gets a short notice
+  email (`onExistingUserSignUp`) so a failed verification email is not a mystery.
+- `autoSignIn: false` keeps the old flow: sign up → check email → sign in.
+
+Known limits of this change (also in the PR description):
+
+- The `prisma db push` step drops nothing, but it does make the legacy columns
+  nullable. Remove them in a later deliberate migration after production has
+  been verified.
+- `PLUNK_FROM` must be verified in Plunk. Until it is, verification and reset
+  emails will fail with a logged status and a generic message to the user.
+- Better Auth's rate limiter uses memory by default, so a restart clears the
+  counters.
 
 ### 2026-10-17 — brief adopted into the repository; failsafe gaps closed
 

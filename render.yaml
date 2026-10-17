@@ -3,7 +3,9 @@ services:
     name: crypto-vault
     runtime: node
     plan: free
-    buildCommand: npm install && npx prisma generate && npx prisma db push && npm run build
+    # prisma db push applies the Better Auth tables; migrate-auth then moves
+    # existing passwords/verification state across and is safe to re-run.
+    buildCommand: npm install && npx prisma generate && npx prisma db push && node scripts/migrate-auth.mjs && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -13,9 +15,9 @@ services:
         sync: false
       - key: APP_URL
         sync: false
-      - key: RESEND_API_KEY
+      - key: PLUNK_SECRET_KEY
         sync: false
-      - key: EMAIL_FROM
+      - key: PLUNK_FROM
         sync: false
       - key: CRON_SECRET
         sync: false
