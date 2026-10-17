@@ -2,17 +2,24 @@
 
 A privacy-first, multi-user, watch-only crypto wallet monitoring SaaS.
 
+> **Read [`ENGINEERING.md`](./ENGINEERING.md) before changing anything.** It is
+> the standing brief: non-negotiable principles, the environment contract,
+> failsafes, and the handover-note template. It wins over a quick request until
+> it is updated.
+
 ## Product model
 - Users sign up with email/password.
 - Each user owns a private vault of public wallet addresses.
 - Supports Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain, Avalanche, Gnosis, Linea, Scroll, zkSync, Mantle, Celo, Cronos, opBNB, Moonbeam, Moonriver, Metis, Blast, Mode, Taiko, Sei EVM, Berachain, Ink, Sonic, Solana and Bitcoin.
 - Deposit detection is based on native balance increases.
+- Withdrawals need two consecutive readings below the last confirmed balance before an alert is sent, so a provider that briefly reports zero cannot raise a false alarm.
+- Alerts are stored first and emailed second; anything that could not be emailed is retried by a later monitoring run.
 - Email alerts are sent to the account email.
 - Seed phrases/private keys are rejected and never stored.
 
 ## Deploying (Render + GitHub Actions + Resend)
 
-1. **Database** - Render PostgreSQL. Copy the *Internal Database URL* into `DATABASE_URL` on the web service. Note: Render's free Postgres is time-limited (check the expiry date on its page) - move to a paid plan or export data before it lapses.
+1. **Database** - Render PostgreSQL. Copy the *Internal Database URL* into `DATABASE_URL` on the web service. The build runs `npx prisma db push`, which adds any new columns without dropping data. Note: Render's free Postgres is time-limited (check the expiry date on its page) - move to a paid plan or export data before it lapses.
 2. **Web service** - set `DATABASE_URL`, `AUTH_SECRET` (32+ chars), `APP_URL` (exact Render URL, no trailing slash), `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`.
 3. **Email (Resend)** - create an API key at resend.com. To email *any* user you must verify a sending domain in Resend and use an address on it for `EMAIL_FROM`. Without a verified domain, Resend only delivers to your own account email (use `Crypto Vault <onboarding@resend.dev>` for testing).
 4. **Monitoring** - `.github/workflows/monitor.yml` calls `/api/monitor` every 5 minutes. In the GitHub repo add Actions secrets `VAULT_APP_URL` (your Render URL) and `VAULT_CRON_SECRET` (same value as `CRON_SECRET`). Then run the workflow once manually from the Actions tab to confirm it succeeds. The pings also keep a free-plan service awake. Scheduled workflows on public repos are paused after 60 days without repo activity.

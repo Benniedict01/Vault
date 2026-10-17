@@ -37,6 +37,14 @@ model Wallet {
   lastNativeAmount    String    @default("0")
   lastNativeUsdValue  String    @default("0")
   lastCheckedAt       DateTime?
+  // Withdrawal confirmation (failsafe 5.3). lastConfirmedAmount is the last
+  // balance an alert was decided against; it only moves once a change is
+  // confirmed. A first balance drop is parked in pendingDecreaseAmount and is
+  // alerted on only if the next read still shows the drop, so a provider that
+  // briefly reports zero cannot raise a false withdrawal alert.
+  lastConfirmedAmount   String?
+  pendingDecreaseAmount String?
+  pendingDecreaseAt     DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   notifications       Notification[]
@@ -56,6 +64,17 @@ model Notification {
   usdValue    String?
   txHash      String?
   type        String    @default("deposit")
+  // Delivery state (failsafe 5.1). The row is always written before the email
+  // is attempted, so an alert that could not be emailed is retried by a later
+  // monitor run instead of being lost.
+  // sentAt defaults to "now" so rows that existed before this column was added
+  // are treated as already delivered: deploying this must not re-send the last
+  // day of alerts. The alert pipeline sets sentAt to null explicitly when it
+  // wants a retry.
+  sentAt       DateTime? @default(now())
+  sendAttempts Int       @default(0)
+  sendError    String?
   createdAt   DateTime  @default(now())
   @@index([userId, createdAt])
+  @@index([sentAt, createdAt])
 }
