@@ -1,11 +1,28 @@
 import './globals.css';
-import { Space_Grotesk, DM_Sans, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import PWA from './pwa';
 
-// Self-hosted at build time by Next.js — no runtime request to Google Fonts.
-const display = Space_Grotesk({ subsets: ['latin'], variable: '--font-display', display: 'swap' });
-const body = DM_Sans({ subsets: ['latin'], variable: '--font-body', display: 'swap' });
-const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' });
+// Self-hosted variable fonts (OFL-licensed, via @fontsource-variable). No
+// runtime or build-time request to Google Fonts — the build never depends on
+// an external font host.
+const display = localFont({
+  src: './fonts/space-grotesk-latin-wght-normal.woff2',
+  weight: '300 700',
+  variable: '--font-display',
+  display: 'swap',
+});
+const body = localFont({
+  src: './fonts/dm-sans-latin-wght-normal.woff2',
+  weight: '100 1000',
+  variable: '--font-body',
+  display: 'swap',
+});
+const mono = localFont({
+  src: './fonts/jetbrains-mono-latin-wght-normal.woff2',
+  weight: '100 800',
+  variable: '--font-mono',
+  display: 'swap',
+});
 
 function siteUrl() {
   try { return new URL(process.env.APP_URL || 'http://localhost:3000'); }

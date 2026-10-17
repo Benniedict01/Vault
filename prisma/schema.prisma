@@ -1,5 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Engine-less client: the query engine ships as WASM inside @prisma/client
+  // and queries run through the pg driver adapter (see lib/prisma.js), so
+  // builds and deploys never download native engine binaries.
+  engineType      = "client"
+  previewFeatures = ["queryCompiler"]
 }
 
 datasource db {
@@ -25,6 +30,7 @@ model User {
   updatedAt                DateTime  @updatedAt
   wallets                  Wallet[]
   notifications            Notification[]
+  emailEvents              EmailEvent[]
 }
 
 model Wallet {
@@ -57,5 +63,37 @@ model Notification {
   txHash      String?
   type        String    @default("deposit")
   createdAt   DateTime  @default(now())
+  @@index([userId, createdAt])
+}
+
+// Delivery/observability log for transactional email. Stores provider metadata
+// only — never email bodies, passwords, or verification/reset tokens.
+model EmailEvent {
+  id                String    @id @default(cuid())
+  userId            String?
+  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type              String
+  provider          String
+  providerMessageId String?
+  status            String
+  failureCode       String?
+  failureMessage    String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  @@index([userId, createdAt])
+  @@index([type, status, createdAt])
+}
+
+// Idempotency ledger for monitor-detected on-chain events. `key` is a
+// deterministic identifier (e.g. chain + txHash + wallet + asset); the unique
+// constraint makes notification delivery exactly-once across monitor runs.
+model ProcessedEvent {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  type      String
+  userId    String?
+  walletId  String?
+  createdAt DateTime @default(now())
+  @@index([walletId, createdAt])
   @@index([userId, createdAt])
 }

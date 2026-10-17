@@ -366,3 +366,35 @@ code { font-family: var(--font-code); }
 @media (max-width: 340px) {
   .dashnav { height: auto; flex-wrap: wrap; padding-block: 8px; }
 }
+
+/* ── Live status / banners (v3.2 hardening pass) ──────── */
+.livestat {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 700; letter-spacing: .06em;
+  color: var(--muted); padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--line); background: #0a0f15;
+}
+.livestat i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
+.livestat.on { color: var(--green); border-color: #1f3a2c; background: rgba(12, 26, 19, .8); }
+.livestat.on i { background: var(--green); box-shadow: 0 0 0 0 rgba(98, 242, 163, .6); animation: pulse 2.2s infinite; }
+.livestat.bad { color: var(--red); border-color: #4a2128; background: #1f1013; }
+.livestat.bad i { background: var(--red); }
+
+.banner {
+  padding: 13px 16px; border-radius: 14px; font-size: 14px; line-height: 1.5;
+  margin-bottom: 18px; border: 1px solid;
+}
+.banner.warn { color: #ffd9a8; background: #1c160c; border-color: #4a3a1c; }
+.banner.info { color: #a8c7ff; background: #0c1220; border-color: #22314e; }
+
+.statnote { color: var(--muted-2); font-size: 12px; margin-top: 8px; line-height: 1.5; }
+.lastupdated { font-size: 13px; }
+.linkbtn {
+  background: none; border: 0; padding: 0; color: var(--green); font-weight: 600; font-size: inherit;
+}
+.linkbtn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.linkbtn:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+@media (max-width: 600px) {
+  .livestat { display: none; }
+}
