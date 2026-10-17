@@ -14,7 +14,7 @@ export async function POST(req) {
     await createSession(user.id);
     return NextResponse.json({ ok: true, emailVerified: Boolean(user.emailVerifiedAt) });
   } catch (e) {
-    console.error(e);
+    console.error('[auth] sign in failed', { reason: e?.message });
     return NextResponse.json({ error: 'Unable to sign in.' }, { status: 500 });
   }
 }

@@ -26,7 +26,7 @@ export async function POST(req) {
     await sendVerificationEmail(user, token);
     return NextResponse.json({ ok: true, message: 'A new verification email has been sent.' });
   } catch (e) {
-    console.error('[email] verification resend failed:', e);
+    console.error('[email] verification resend failed', { reason: e?.message });
     return NextResponse.json({ error: 'Email delivery is not configured or the message could not be sent.' }, { status: 503 });
   }
 }

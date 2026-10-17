@@ -6,7 +6,9 @@
     "postinstall": "prisma generate",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "check": "node scripts/syntax-check.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

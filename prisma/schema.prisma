@@ -37,6 +37,11 @@ model Wallet {
   lastNativeAmount    String    @default("0")
   lastNativeUsdValue  String    @default("0")
   lastCheckedAt       DateTime?
+  // A withdrawal is only alerted after a second confirming read. These fields
+  // hold the suspicion between two runs.
+  pendingWithdrawalFrom String?
+  pendingWithdrawalTo   String?
+  pendingWithdrawalAt   DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   notifications       Notification[]
@@ -56,6 +61,15 @@ model Notification {
   usdValue    String?
   txHash      String?
   type        String    @default("deposit")
+  // Email delivery state: pending | sent | failed | skipped.
+  // "pending" and "failed" rows are retried by the monitor job, so a provider
+  // outage cannot lose an alert.
+  emailStatus       String    @default("pending")
+  emailSentAt       DateTime?
+  emailAttempts     Int       @default(0)
+  emailLastError    String?
+  emailLastAttemptAt DateTime?
   createdAt   DateTime  @default(now())
   @@index([userId, createdAt])
+  @@index([emailStatus, emailLastAttemptAt])
 }

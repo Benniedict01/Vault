@@ -37,7 +37,7 @@ export async function POST(req) {
         message: 'Account created. We sent a verification link to your email.'
       });
     } catch (err) {
-      console.error('[email] verification send failed:', err);
+      console.error('[email] verification send failed', { reason: err?.message });
       return NextResponse.json({
         ok: true,
         emailSent: false,
@@ -45,7 +45,7 @@ export async function POST(req) {
       });
     }
   } catch (e) {
-    console.error(e);
+    console.error('[auth] registration failed', { reason: e?.message });
     return NextResponse.json({ error: 'Unable to create account.' }, { status: 500 });
   }
 }

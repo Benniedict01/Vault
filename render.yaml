@@ -19,3 +19,15 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
+      # Fallback mail delivery. Only used when RESEND_API_KEY is empty.
+      # Render's free plan blocks outbound SMTP, so leave these unset there.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
