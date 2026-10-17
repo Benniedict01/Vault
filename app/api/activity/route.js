@@ -1,3 +1,47 @@
-import {NextResponse} from 'next/server';import {getSessionUserId} from '@/lib/auth';import {db} from '@/lib/prisma';import {BLOCKSCOUT,CHAINS} from '@/lib/validation';
-async function getJson(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw Error('activity unavailable');return r.json();}
-export async function GET(){const id=await getSessionUserId();if(!id)return NextResponse.json({error:'Unauthorized'},{status:401});const ws=await db.wallet.findMany({where:{userId:id}});const out=[];for(const w of ws){const c=CHAINS[w.chain];if(c.kind==='evm'&&BLOCKSCOUT[w.chain]){try{const j=await getJson(`${BLOCKSCOUT[w.chain]}/api/v2/addresses/${w.address}/transactions`);for(const x of (j.items||[]).slice(0,10))out.push({chain:c.name,hash:x.hash||x.transaction_hash,timestamp:x.timestamp,from:x.from?.hash,to:x.to?.hash,value:Number(x.value||0)/1e18,symbol:c.symbol,type:x.transaction_types?.[0]||x.method||'transaction'});}catch{}}}out.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));return NextResponse.json(out.slice(0,30));}
+import { NextResponse } from 'next/server';
+import { getSessionUserId } from '@/lib/auth';
+import { db } from '@/lib/prisma';
+import { BLOCKSCOUT, CHAINS, maskAddress } from '@/lib/validation';
+
+async function getJson(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`explorer HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function GET() {
+  const userId = await getSessionUserId();
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const wallets = await db.wallet.findMany({ where: { userId } });
+  const items = [];
+
+  for (const wallet of wallets) {
+    const chain = CHAINS[wallet.chain];
+    // A wallet on a network removed from the registry must not break this list.
+    if (!chain) continue;
+    if (chain.kind !== 'evm' || !BLOCKSCOUT[wallet.chain]) continue;
+
+    try {
+      const json = await getJson(`${BLOCKSCOUT[wallet.chain]}/api/v2/addresses/${wallet.address}/transactions`);
+      for (const tx of (json.items || []).slice(0, 10)) {
+        items.push({
+          chain: chain.name,
+          hash: tx.hash || tx.transaction_hash,
+          timestamp: tx.timestamp,
+          from: tx.from?.hash,
+          to: tx.to?.hash,
+          value: Number(tx.value || 0) / 1e18,
+          symbol: chain.symbol,
+          type: tx.transaction_types?.[0] || tx.method || 'transaction',
+        });
+      }
+    } catch (error) {
+      // One failing explorer must not stop the other wallets.
+      console.warn(`[activity] ${wallet.chain}/${maskAddress(wallet.address)}:`, error?.message);
+    }
+  }
+
+  items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  return NextResponse.json(items.slice(0, 30));
+}

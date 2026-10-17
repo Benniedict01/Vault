@@ -1,1 +1,50 @@
-'use client';import {useEffect,useState} from 'react';import {useRouter} from 'next/navigation';export default function Reset(){const [token,setToken]=useState(''),[p,setP]=useState(''),[msg,setMsg]=useState(''),[err,setErr]=useState('');const r=useRouter();useEffect(()=>setToken(new URLSearchParams(window.location.search).get('token')||''),[]);async function go(x){x.preventDefault();const res=await fetch('/api/auth/reset',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,password:p})});const j=await res.json();if(!res.ok)setErr(j.error);else{setMsg('Password changed. You can now sign in.');setTimeout(()=>r.push('/login'),1000)}}return <main className="auth"><div className="authbox"><h1>Choose a new password</h1><form onSubmit={go}><div className="field"><label>New password</label><input type="password" minLength={8} value={p} onChange={x=>setP(x.target.value)} required/></div>{err&&<div className="err">{err}</div>}{msg&&<div className="success">{msg}</div>}<button className="btn primary full">Update password</button></form></div></main>}
+'use client';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { authClient } from '@/lib/auth-client';
+
+export default function Reset() {
+  const [token, setToken] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Read the token from the address bar in the browser: the reset link is
+  // /reset-password?token=… after Better Auth redirects here.
+  useEffect(() => {
+    setToken(new URLSearchParams(window.location.search).get('token') || '');
+  }, []);
+
+  async function submit(event) {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const { error: authError } = await authClient.resetPassword({ newPassword: password, token });
+      if (authError) {
+        setError(authError.message || 'This reset link is invalid or expired.');
+      } else {
+        setMessage('Password changed. Every other signed-in device has been signed out.');
+        setPassword('');
+      }
+    } catch {
+      setError('Unable to contact the server.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return <main className="auth"><div className="authbox">
+    <Link href="/" className="brand">Crypto<span>Vault</span></Link>
+    <h1>Choose a new password</h1>
+    {!token && <div className="err">This page needs a reset link. Open the link from your email, or <Link href="/forgot-password">request a new one</Link>.</div>}
+    <form onSubmit={submit}>
+      <div className="field"><label>New password</label><input type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} required disabled={!token} /></div>
+      {error && <div className="err">{error}</div>}
+      {message && <div className="success">{message}</div>}
+      <button className="btn primary full" disabled={loading || !token}>{loading ? 'Updating…' : 'Update password'}</button>
+    </form>
+    <p><Link href="/login">Back to sign in</Link></p>
+  </div></main>;
+}

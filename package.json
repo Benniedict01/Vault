@@ -11,12 +11,13 @@
   "dependencies": {
     "@prisma/client": "^6.16.2",
     "bcryptjs": "^3.0.2",
-    "jose": "^6.1.0",
+    "better-auth": "^1.7.10",
     "next": "^15.5.7",
-    "nodemailer": "^7.0.6",
     "prisma": "^6.16.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

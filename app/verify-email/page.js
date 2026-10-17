@@ -1,1 +1,18 @@
-'use client';import {useEffect,useState} from 'react';import Link from 'next/link';export default function Verify(){const [token,setToken]=useState(''),[msg,setMsg]=useState('Verifying…');useEffect(()=>{const t=new URLSearchParams(window.location.search).get('token')||'';setToken(t);fetch('/api/auth/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:t})}).then(r=>r.json()).then(j=>setMsg(j.ok?'Email verified. You can sign in now.':j.error||'Verification failed.'))},[]);return <main className="auth"><div className="authbox"><h1>Email verification</h1><p>{msg}</p><Link className="btn primary" href="/login">Go to sign in</Link></div></main>}
+import Link from 'next/link';
+
+// Verification links point at /api/auth/verify-email, which Better Auth handles
+// and then redirects to the sign-in page. This route exists for people who land
+// here directly (an old link, a bookmark, or a typo) so they get an explanation
+// instead of a 404.
+export const metadata = { title: 'Email verification — Crypto Vault' };
+
+export default function Verify() {
+  return <main className="auth"><div className="authbox">
+    <Link href="/" className="brand">Crypto<span>Vault</span></Link>
+    <h1>Email verification</h1>
+    <p>Verification finishes automatically when you open the link in your inbox. There is no code to type.</p>
+    <p>If the link has expired or you never received it, request a new one:</p>
+    <Link className="btn primary full" href="/resend-verification">Send a new verification link</Link>
+    <p style={{ textAlign: 'center' }}><Link href="/login">Back to sign in</Link></p>
+  </div></main>;
+}
