@@ -1,6 +1,7 @@
 import './globals.css';
 import { Space_Grotesk, DM_Sans, JetBrains_Mono } from 'next/font/google';
 import PWA from './pwa';
+import PreviewBanner from './preview-banner';
 
 // Self-hosted at build time by Next.js — no runtime request to Google Fonts.
 const display = Space_Grotesk({ subsets: ['latin'], variable: '--font-display', display: 'swap' });
@@ -30,7 +31,7 @@ export const viewport = { themeColor: '#06080c', viewportFit: 'cover' };
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
-      <body>{children}<PWA /></body>
+      <body><PreviewBanner />{children}<PWA /></body>
     </html>
   );
 }

@@ -127,6 +127,10 @@ before the alert so partial progress survives a crash or timeout.
 GitHub Actions secrets: `VAULT_APP_URL` (the deployed URL), `VAULT_CRON_SECRET`
 (same value as `CRON_SECRET`).
 
+Development only, never set in a deployment: `VAULT_PREVIEW=1` (enables the
+local preview hooks: request-derived origin, driver adapter) and
+`VAULT_PREVIEW_OUTBOX` (captures email to a file for `/dev/outbox`).
+
 Removed and must not be reintroduced without a reason:
 `MIN_NOTIFY_AMOUNT`, `CHECK_INTERVAL_SECONDS`, `ACCESS_TOKEN`, `VAULT_ADDRESSES`
 (from the earlier standalone Node server), and `RESEND_API_KEY`, `EMAIL_FROM`,
@@ -367,6 +371,39 @@ When you finish a change, report:
 ---
 
 ## 9. Change log
+
+### 2026-10-23 — local preview (`npm run preview`)
+
+The app can now be run and used on a development machine without deploying and
+without an email provider, which is what makes a change reviewable before it
+reaches `main`.
+
+- `scripts/preview/` starts a database, generates the client, applies the schema
+  and runs `next dev`. Nothing in it is used by the deployed app.
+- Database: `DATABASE_URL` if set, otherwise PGlite (Postgres compiled to wasm,
+  speaking the real wire protocol) in `.preview/pgdata`. Schema DDL comes from
+  `prisma/schema.prisma` through Prisma's own parser, so the preview cannot
+  drift from the committed schema. Production stays on `prisma db push`.
+- Client: generated with `engineType = "client"` and `@prisma/adapter-pg`, since
+  a sandbox may not be able to download the native engine. `lib/prisma.js` passes
+  the adapter only when `VAULT_PREVIEW=1`.
+- Email: with `VAULT_PREVIEW_OUTBOX` set, `lib/mail.js` writes each message to
+  `.preview/outbox.jsonl` and `/dev/outbox` displays it. This exists so the
+  verification and reset links can be followed; it is *not* a failure fallback.
+  A real send error still throws, and the monitor still records and retries.
+- Origin: with `VAULT_PREVIEW=1`, Better Auth derives the base URL from the
+  request and accepts the request origin, so the app works behind a proxy.
+
+Rules:
+
+- Never let preview behaviour leak into production. Every hook is gated on
+  `VAULT_PREVIEW` / `VAULT_PREVIEW_OUTBOX`, which `render.yaml` does not set.
+- `/dev/outbox` must return 404 when `VAULT_PREVIEW_OUTBOX` is unset. It reads a
+  local file, so it must never be reachable in a deployment.
+- The preview proves the flows work against a real database; it does not prove
+  Plunk delivery, which still needs one real send after deploy.
+- `npm run preview` leaves a query-compiler Prisma client in `node_modules`.
+  `npx prisma generate` restores the deployed one.
 
 ### 2026-10-17 (later) — verification/reset replaced with Better Auth; Plunk replaces Resend and SMTP
 

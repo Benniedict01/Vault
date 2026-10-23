@@ -17,6 +17,47 @@ A privacy-first, multi-user, watch-only crypto wallet monitoring SaaS.
 - Email alerts are sent to the account email.
 - Seed phrases/private keys are rejected and never stored.
 
+## Run it locally
+
+No deployment, no email account, no external database:
+
+```sh
+npm install
+npm run preview      # http://localhost:3000
+```
+
+That starts the real app: Postgres (PGlite, the same engine, over the real wire
+protocol, kept in `.preview/pgdata`), the Prisma client generated from
+`prisma/schema.prisma`, the tables created from that schema, and `next dev` with
+hot reload. Better Auth, the API routes and the alert pipeline are the code that
+ships; nothing is mocked.
+
+Two things differ from production, both switched on only by `npm run preview`:
+
+- **Email is captured, not sent.** With no `PLUNK_SECRET_KEY` the sender appends
+  each message to `.preview/outbox.jsonl` instead. Open `/dev/outbox` to read the
+  verification and reset emails and click the links. The banner at the top of
+  every page links there. In the deployed app that route is a 404 and nothing is
+  captured.
+- **The origin is taken from the request**, so the app works behind a proxy
+  instead of only at `APP_URL`.
+
+Useful things to try: sign up (you land on "check your email"), open the inbox,
+follow the verification link, sign in, add a wallet, then "forgot password" to
+see the whole reset flow. The monitor is not on a timer locally; run it by hand
+or wait for a cron trigger.
+
+Notes:
+
+- Reset the local data by deleting `.preview/` (stop the server first).
+- Already have Postgres? Use it instead: `DATABASE_URL=postgres://... npm run preview`,
+  after `npx prisma db push` creates the tables.
+- If Google Fonts is unreachable (offline or restricted network), `next dev`
+  logs a warning and falls back to system fonts. Nothing else is affected.
+- `npm run preview` generates the Prisma client with the wasm query compiler and
+  `@prisma/adapter-pg`. To go back to the deployed configuration, run
+  `npx prisma generate`.
+
 ## Deploying (Render + GitHub Actions + Plunk)
 
 1. **Database** - Render PostgreSQL. Copy the *Internal Database URL* into `DATABASE_URL` on the web service. The build runs `npx prisma db push` (adds tables and columns without dropping data) and then `node scripts/migrate-auth.mjs`, which is idempotent. Note: Render's free Postgres is time-limited (check the expiry date on its page) - move to a paid plan or export data before it lapses.
