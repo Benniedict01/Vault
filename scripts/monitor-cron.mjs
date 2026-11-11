@@ -1,0 +1,1 @@
+const base=process.env.APP_URL;if(!base)throw Error('APP_URL is required');const r=await fetch(`${base.replace(/\/$/,'')}/api/monitor`,{method:'POST',headers:{authorization:`Bearer ${process.env.CRON_SECRET}`}});console.log(await r.text());if(!r.ok)process.exit(1);

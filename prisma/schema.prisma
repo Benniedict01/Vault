@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                       String    @id @default(cuid())
+  email                    String    @unique
+  passwordHash             String
+  emailVerifiedAt          DateTime?
+  verificationTokenHash    String?
+  verificationTokenExpiresAt DateTime?
+  resetTokenHash           String?
+  resetTokenExpiresAt      DateTime?
+  tokenMonitoringEnabled   Boolean   @default(true)
+  notifyDeposits           Boolean   @default(true)
+  notifyWithdrawals        Boolean   @default(false)
+  notifyTokenDeposits      Boolean   @default(true)
+  minimumNotificationUsd   String    @default("0")
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  wallets                  Wallet[]
+  notifications            Notification[]
+}
+
+model Wallet {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label               String
+  chain               String
+  address             String
+  lastNativeAmount    String    @default("0")
+  lastNativeUsdValue  String    @default("0")
+  lastCheckedAt       DateTime?
+  tokenLastCheckedAt  DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  notifications       Notification[]
+  @@unique([userId, chain, address])
+  @@index([userId])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  walletId    String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet      Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  chain       String
+  symbol      String
+  amount      String
+  usdValue    String?
+  txHash      String?
+  type        String    @default("deposit")
+  eventKey    String?   @unique
+  emailOutbox EmailOutbox?
+  createdAt   DateTime  @default(now())
+  @@index([userId, createdAt])
+}
+
+
+// Durable, retryable email queue. Only ordinary email text is stored; no files,
+// JSON dumps, binary payloads, or base64 blobs are written to PostgreSQL.
+model EmailOutbox {
+  id             String       @id @default(cuid())
+  notificationId String       @unique
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  recipient      String
+  subject        String
+  text           String       @db.Text
+  status         String       @default("pending")
+  attempts       Int          @default(0)
+  nextAttemptAt  DateTime     @default(now())
+  sentAt         DateTime?
+  lastError      String?      @db.VarChar(500)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  @@index([status, nextAttemptAt])
+}
+
+model MonitorLock {
+  id        String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([expiresAt])
+}
